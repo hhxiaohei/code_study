@@ -43,6 +43,7 @@ WEB模式为了应对并发，可能采用多线程，因此生命周期1和5有
 
 Laravel 的生命周期从public\index.php开始，从public\index.php结束。
 ![1](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-19/1618832438261-1.webp)
+
 下面是 public\index.php的全部源码,更具体来说可以分为四步：
 ```php
 1. require __DIR__.'/../bootstrap/autoload.php';
@@ -69,6 +70,7 @@ composer自动加载需要的类
 请求结束，进行回调（对应代码4，还记得可终止中间件吗？没错，就是在这里回调的）。
 
 ![3](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-19/1618832493941-3.webp)
+
 我们不妨在详细一点：
 
 第一步：注册加载composer自动生成的class loader
