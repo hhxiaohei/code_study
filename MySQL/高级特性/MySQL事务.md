@@ -695,6 +695,7 @@ Time: 14.159s(查询消耗时间，是由于 sessionA处于阻塞过程中)
 
 可重复读：事务 B 在提交前，不管事务 A 是否提交，读到的数据永远是事务 B 开始时的状态。
 ![m_ae96c565a0fabd92412f56ef2d6ff057_r](https://gitee.com/bruce_qiq/picture/raw/master/2021-3-26/1616725688209-m_ae96c565a0fabd92412f56ef2d6ff057_r.png)
+> 对于可重复读隔离级别，MySQL使用了间隙锁(Gap lock)避免产生幻读情况。
 
 
 #### 隔离级别优缺点分析
