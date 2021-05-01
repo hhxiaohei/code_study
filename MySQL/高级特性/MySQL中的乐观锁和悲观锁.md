@@ -1,464 +1,159 @@
-##  导语
+## 文章介绍
+对于MySQL中的乐观锁和悲观锁，可能很多的开发者还不是很熟悉，并不知道其中具体是如何实现的。本文就针对这个问题做一个实际案例演示，让你彻底明白这两种锁的区别。
 
-**锁是计算机协调多个进程或线程并发访问某一资源的机制。**
+## 相关文章
 
-在数据库中，除传统的计算资源（如 CPU、RAM、I/O 等）的争用以外，数据也是一种供许多用户共享的资源。如何保证数据并发访问的一致性、有效性是所有数据库必须解决的一 个问题，锁冲突也是影响数据库并发访问性能的一个重要因素。
+之前针对MySQL中的锁单独分享过一篇文章，对于MySQL锁还不够了解的可以仔细阅读以下该文。
 
-从这个角度来说，锁对数据库而言显得尤其重要，也更加复杂。本章我们着重讨论 MySQL 锁机制 的特点，常见的锁问题，以及解决 MySQL 锁问题的一些方法或建议。
+## 锁分类
 
-Mysql 用到了很多这种锁机制，比如行锁，表锁等，读锁，写锁等，都是在做操作之前先上锁。这些锁统称为悲观锁(Pessimistic Lock)。
+MySQL的中锁按照范围主要分为表锁、行锁和页面锁。其中myisam存储引擎只支持表锁，InnoDB不仅仅支持行锁，在一定程度上也支持表锁。按照行为可以分为共享锁(读锁)、排他锁(写锁)和意向锁。按照思想分为乐观锁和悲观锁。
 
-## 题纲
+今天的文章演示一下实际中的乐观锁和悲观锁是如何操作的。
 
-![Snipaste_2021-04-25_01-13-16](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619284426393-Snipaste_2021-04-25_01-13-16.png)
+## 表结构
 
-## 相关书籍推荐
-![up-086c40e77eb7568ab66bd6117be64778c14
-](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281909164-up-086c40e77eb7568ab66bd6117be64778c14.png)
-
-## MySQL锁分类
-
-相对其他数据库而言，MySQL 的锁机制比较简单，其最 显著的特点是不同的存储引擎支持不同的锁机制。
-
-比如，MyISAM 和 MEMORY 存储引擎采用的是表级锁（table-level locking）；
-
-BDB 存储引擎采用的是页面锁（page-level locking），但也支持表级锁；
-
-InnoDB 存储引擎既支持行级锁（row-level locking），也支持表级锁，但默认情况下是采用行级锁。
-
-**1.表级锁**：开销小，加锁快；不会出现死锁；锁定粒度大，发生锁冲突的概率最高，并发度最低。
-
-**2.行级锁**：开销大，加锁慢；会出现死锁；锁定粒度最小，发生锁冲突的概率最低，并发度也最高。
-
-**3.页面锁**：开销和加锁时间界于表锁和行锁之间；会出现死锁；锁定粒度界于表锁和行锁之间，并发度一般
-
-从上述特点可见，很难笼统地说哪种锁更好，只能就具体应用的特点来说哪种锁更合适！
-
-仅从锁的角度 来说：表级锁更适合于以查询为主，只有少量按索引条件更新数据的应用，如 Web 应用；而行级锁则更适合于有大量按索引条件并发更新少量不同数据，同时又有 并发查询的应用，如一些在线事务处理（OLTP）系统。
-
-## MyISAM 表锁
-
-MySQL 的表级锁有两种模式：表共享读锁（Table Read Lock）和表独占写锁（Table Write Lock）。
-1. 对 MyISAM 表的读操作，不会阻塞其他用户对同一表的读请求，但会阻塞对同一表的写请求；
-2. 对 MyISAM 表的写操作，则会阻塞其他用户对同一表的读和写操作；
-3. MyISAM 表的读操作与写操作之间，以及写操作之间是串行的！根据如表 20-2 所示的 例子可以知道，当一个线程获得对一个表的写锁后，只有持有锁的线程可以对表进行更新操作。其他线程的读、写操作都会等待，直到锁被释放为止。
-
-### MyISAM 存储引擎的写锁阻塞读例子：
-
-当一个线程获得对一个表的写锁后，只有持有锁的线程可以对表进行更新操作。其他线程的读、写操作都会等待，直到锁被释放为止。
-
-![1](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281242330-1.png)
-
-### MyISAM 存储引擎的读锁阻塞写例子:
-一个 session 使用 LOCK TABLE 命令给表 film_text 加了读锁，这个 session 可以查询锁定表中的记录，但更新或访问其他表都会提示错误；同时，另外一个 session 可以查询表中的记录，但更新就会出现锁等待。
-![2](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281266337-2.png)
-
-## 如何加表锁
-
-1. MyISAM 在执行查询语句（SELECT）前，会自动给涉及的所有表加读锁。
-
-2. 在执行更新操作 （UPDATE、DELETE、INSERT 等）前，会自动给涉及的表加写锁，这个过程并不需要用户干预，因此，用户一般不需要直接用 LOCK TABLE 命令给 MyISAM 表显式加锁。
-
-在示例中，显式加锁基本上都是为了演示而已，并非必须如此。给 MyISAM 表显示加锁，一般是为了在一定程度模拟事务操作，实现对某一时间点多个表的一致性读取。例如， 有一个订单表 orders，其中记录有各订单的总金额 total，同时还有一个订单明细表 order_detail，其中记录有各订单每一产品的金额小计 subtotal，假设我们需要检查这两个表的金额合计是否相符，可能就需要执行如下两条 SQL：
-
+下面的SQL语句是表的结构。
 ```mysql
-Select sum(total) from orders;
-Select sum(subtotal) from order_detail;
+CREATE TABLE `demo`.`user`  (
+  `id` int(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sex` tinyint(1) UNSIGNED NOT NULL DEFAULT 0,
+  `email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  `mobile` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  `version` int(1) NULL DEFAULT 1 COMMENT '数据版本号',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 8 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci ROW_FORMAT = Dynamic;
 ```
-
-这时，如果不先给两个表加锁，就可能产生错误的结果，因为第一条语句执行过程中，order_detail 表可能已经发生了改变。因此，正确的方法应该是：
-
+插入模拟数据
 ```mysql
-Lock tables orders read local, order_detail read local;
-Select sum(total) from orders;
-Select sum(subtotal) from order_detail;
-Unlock tables;
+BEGIN;
+INSERT INTO `user` VALUES (0000000001, '张三', 0, '18228937997@163.com', '18228937997', 1);
+INSERT INTO `user` VALUES (0000000002, '李四', 0, '1005349393@163.com', '15683202302', 1);
+INSERT INTO `user` VALUES (0000000003, '李四1', 0, '1005349393@163.com', '15683202302', 1);
+INSERT INTO `user` VALUES (0000000004, '李四2', 0, '1005349393@163.com', '15683202302', 1);
+INSERT INTO `user` VALUES (0000000005, '李四3', 0, '1005349393@163.com', '15683202302', 1);
+INSERT INTO `user` VALUES (0000000006, '李四4', 0, '1005349393@163.com', '15683202302', 1);
+INSERT INTO `user` VALUES (0000000007, '李四55', 0, '1005349393@163.com', '15683202302', 1);
+COMMIT;
 ```
-
-要特别说明以下两点内容：
-1. 上面的例子在 LOCK TABLES 时加了“local”选项，其作用就是在满足 MyISAM 表并发插入条件的情况下，允许其他用户在表尾并发插入记录，有关 MyISAM 表的并发插入问题，在后面还会进一步介绍。
-
-2. 在用 LOCK TABLES 给表显式加表锁时，必须同时取得所有涉及到表的锁，并且 MySQL 不支持锁升级。也就是说，在执行 LOCK TABLES 后，只能访问显式加锁的这些表，不能访问未加锁的表；同时，如果加的是读锁，那么只能执行查询操作，而不能执行更新操作。其实，在自动加锁的 情况下也基本如此，MyISAM 总是一次获得 SQL 语句所需要的全部锁。这也正是 MyISAM 表不会出现死锁（Deadlock Free）的原因。
-
-当使用 LOCK TABLES 时，不仅需要一次锁定用到的所有表，而且，同一个表在 SQL 语句中出现多少次，就要通过与 SQL 语句中相同的别名锁定多少次，否则也会出错！举例说明如下。
-
-1. 对 actor 表获得读锁：
+表中数据。
 ```mysql
-mysql> lock table actor read;
-Query OK, 0 rows affected (0.00 sec)
+mysql root@127.0.0.1:demo> select * from user;
++----+--------+-----+---------------------+-------------+---------+
+| id | name   | sex | email               | mobile      | version |
++----+--------+-----+---------------------+-------------+---------+
+| 1  | 张三   | 0   | 18228937997@163.com | 18228937997 | 2       |
+| 2  | 李四   | 0   | 1005349393@163.com  | 15683202302 | 1       |
+| 3  | 李四1  | 0   | 1005349393@163.com  | 15683202302 | 1       |
+| 4  | 李四2  | 0   | 1005349393@163.com  | 15683202302 | 1       |
+| 5  | 李四3  | 0   | 1005349393@163.com  | 15683202302 | 1       |
+| 6  | 李四4  | 0   | 1005349393@163.com  | 15683202302 | 1       |
+| 7  | 李四55 | 0   | 1005349393@163.com  | 15683202302 | 1       |
++----+--------+-----+---------------------+-------------+---------+
+7 rows in set
+Time: 0.011s
 ```
 
-2. 但是通过别名访问会提示错误：
+## 悲观锁
 
+悲观锁，比较消极的一种锁处理方式。直接在操作数据时，抢占锁。其他的事务在进行时就会等待，直到占有锁的事务释放锁为止。
+
+这种处理方式能保证数据的最大一致性，但是容易导致锁超时、并发程度低等问题。
+首先我们开启事务一，并且对id=1的数据进行update操作，此时我们不提交事务。
 ```mysql
-mysql> select a.first_name,a.last_name,b.first_name,b.last_name
-from actor a,actor b
-where a.first_name = b.first_name and a.first_name = 'Lisa' and a.last_name = 'Tom'
-and a.last_name <> b.last_name;
+mysql root@127.0.0.1:demo> begin;
+Query OK, 0 rows affected
+Time: 0.002s
+mysql root@127.0.0.1:demo> update `user` set  name = '张三111111'where id = 1;
+Query OK, 1 row affected
+Time: 0.004s
 ```
-
-3. 需要对别名分别锁定：
-
+接着我们开启事务二，对id=1的数据进行update操作，查看此时会发生什么情况？
 ```mysql
-mysql> lock table actor as a read,actor as b read;
-Query OK, 0 rows affected (0.00 sec)
+mysql root@127.0.0.1:demo> begin;
+Query OK, 0 rows affected
+Time: 0.002s
+mysql root@127.0.0.1:demo> update `user` set  sex = 1 where id = 1;
 ```
+我们执行完update语句之后，就处于等待状态，SQL语句也不会马上被执行，这是因为事务一没有commit，也就没有释放id=1的数据对应的写锁。效果如下图：
 
-4. 按照别名的查询可以正确执行：
+![Snipaste_2021-04-30_16-15-56](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-30/1619770942843-Snipaste_2021-04-30_16-15-56.png)
 
+> 通过上面的例子，我们就能比较直观的感受到悲观锁的实现过程是如何的。
+
+## 乐观锁
+
+乐观锁认为数据一般情况下不会造成冲突，只有当数据去执行修改情况时，才会针对数据冲突做处理。这里是如何发现冲突了呢？常规的方式，都是在数据行上加一个版本号或者时间戳等字段。(本文使用version作为版本好方式，使用时间戳方式同理)
+
+乐观锁的实现原理：
+1. 一个事务在读取数据时，将对应的版本号字段读取出来，假设此时的版本号是1。
+
+2. 另外一个事务也是执行同样的读取操作。当事务一提交时，对版本号执行+1，此时该数据行的版本号就是2。
+
+3. 第二个事务执行修改操作时，针对业务数据做条件，并默认增加一个版本号作为where条件。此时修改语句中的版本号字段是不满足where条件，该事务执行失败。通过这种方式来达到锁的功能。
+
+![Snipaste_2021-04-30_16-47-25](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-30/1619772457319-Snipaste_2021-04-30_16-47-25.png)
+
+客户端一
 ```mysql
-mysql> select a.first_name,a.last_name,b.first_name,b.last_name
-from actor a,actor b where a.first_name = b.first_name
-and a.first_name = 'Lisa' and a.last_name = 'Tom'
-and a.last_name <> b.last_name;
-+————+———–+————+———–+
-| first_name | last_name | first_name | last_name |
-+————+———–+————+———–+
-| Lisa | Tom | LISA | MONROE |
-+————+———–+————+———–+
-1 row in set (0.00 sec)
+mysql root@127.0.0.1:demo> select * from user where id = 1;
++----+------------+-----+---------------------+-------------+---------+
+| id | name       | sex | email               | mobile      | version |
++----+------------+-----+---------------------+-------------+---------+
+| 1  | 张三111111 | 0   | 18228937997@163.com | 18228937997 | 1       |
++----+------------+-----+---------------------+-------------+---------+
+1 row in set
+Time: 0.012s
+mysql root@127.0.0.1:demo> update `user` set  name = '事务一', version = version + 1  where id = 1 and version = 1;
+Query OK, 1 row affected
+Time: 0.008s
+mysql root@127.0.0.1:demo> select * from user where id = 1;
++----+--------+-----+---------------------+-------------+---------+
+| id | name   | sex | email               | mobile      | version |
++----+--------+-----+---------------------+-------------+---------+
+| 1  | 事务一 | 1   | 18228937997@163.com | 18228937997  |  2      |
++----+--------+-----+---------------------+-------------+---------+
+1 row in set
+Time: 0.009s
 ```
+> 执行update语句的顺序应该在客户端二执行了select之后，在执行。
 
-## 查询表级锁争用情况
-
-可以通过检查 table_locks_waited 和 table_locks_immediate 状态变量来分析系统上的表锁定争夺：
-
+客户端二
 ```mysql
-mysql> show status like 'table%';
-Variable_name | Value
-Table_locks_immediate | 2979
-Table_locks_waited | 0
-2 rows in set (0.00 sec))
+mysql root@127.0.0.1:demo> select * from user where id = 1;
++----+------------+-----+---------------------+-------------+---------+
+| id | name       | sex | email               | mobile      | version |
++----+------------+-----+---------------------+-------------+---------+
+| 1  | 张三111111 | 1   | 18228937997@163.com | 18228937997 | 1       |
++----+------------+-----+---------------------+-------------+---------+
+1 row in set
+Time: 0.015s
+mysql root@127.0.0.1:demo> update `user` set  name = '事务二', version = version + 1  where id = 1 and version = 1;
+Query OK, 0 rows affected
+Time: 0.003s
+mysql root@127.0.0.1:demo> select * from user where id = 1;
++----+--------+-----+---------------------+-------------+---------+
+| id | name   | sex | email               | mobile      | version |
++----+--------+-----+---------------------+-------------+---------+
+| 1  | 事务一 | 1   | 18228937997@163.com | 18228937997 | 2       |
++----+--------+-----+---------------------+-------------+---------+
+1 row in set
+Time: 0.012s
 ```
+此时根据update返回的结构，可以看出受影响的行数为0，同时select查询之后，返现数据也是事务一的数据。
 
-如果 Table_locks_waited 的值比较高，则说明存在着较严重的表级锁争用情况。
+## 适用场景
+悲观锁：比较适合写入操作比较频繁的场景，如果出现大量的读取操作，每次读取的时候都会进行加锁，这样会增加大量的锁的开销，降低了系统的吞吐量。
 
-## 并发插入（Concurrent Inserts）
+乐观锁：比较适合读取操作比较频繁的场景，如果出现大量的写入操作，数据发生冲突的可能性就会增大，为了保证数据的一致性，应用层需要不断的重新获取数据，这样会增加大量的查询操作，降低了系统的吞吐量。
 
-上文提到过 MyISAM 表的读和写是串行的，但这是就总体而言的。在一定条件下，MyISAM 表也支持查询和插入操作的并发进行。
+## 总结
+两种所各有优缺点，读取频繁使用乐观锁，写入频繁使用悲观锁。
 
-MyISAM 存储引擎有一个系统变量 concurrent_insert，专门用以控制其并发插入的行为，其值分别可以为 0、1 或 2。
+像乐观锁适用于写比较少的情况下，即冲突真的很少发生的时候，这样可以省去了锁的开销，加大了系统的整个吞吐量。但如果经常产生冲突，上层应用会不断的进行retry，这样反倒是降低了性能，所以这种情况下用悲观锁就比较合适,之所以用悲观锁就是因为两个用户更新同一条数据的概率高，也就是冲突比较严重的情况下，所以才用悲观锁。
 
-1. 当 concurrent_insert 设置为 0 时，不允许并发插入。
+悲观锁比较适合强一致性的场景，但效率比较低，特别是读的并发低。乐观锁则适用于读多写少，并发冲突少的场景。
 
-2. 当 concurrent_insert 设置为 1 时，如果 MyISAM 表中没有空洞（即表的中间没有被删除的行），MyISAM 允许在一个进程读表的同时，另一个进程从表尾插入记录。这也是 MySQL 的默认设置。
 
-3. 当 concurrent_insert 设置为 2 时，无论 MyISAM 表中有没有空洞，都允许在表尾并发插入记录。
 
-在下面的例子中：
-
-1. session_1 获得了一个表的 READ LOCAL 锁，该线程可以对表进行查询操作，但不能对表进行更新操作；
-
-2. 其他的线程（session_2），虽然不能对表进行删除和更新操作，但却可以对该表进行并发插入操作，这里假设该表中间不存在空洞。
-
-**MyISAM 存储引擎的读写（INSERT）并发例子：**
-![3](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281302283-3.png)
-可以利用 MyISAM 存储引擎的并发插入特性，来解决应 用中对同一表查询和插入的锁争用。例如，将 concurrent_insert 系统变量设为 2，总是允许并发插入；同时，通过定期在系统空闲时段执行 OPTIMIZE TABLE 语句来整理空间碎片，收回因删除记录而产生的中间空洞。
-
-## MyISAM 的锁调度
-
-前面讲过，MyISAM 存储引擎的读锁和写锁是互斥的，读写操作是串行的。
-
-**那么，一个进程请求某个 MyISAM 表的读锁，同时另一个进程也请求同一表的写锁，MySQL 如何处理呢？**
-
-1. 答案是写进程先获得锁。
-
-2. 不仅如此，即使读请求先到锁等待队列，写请求后 到，写锁也会插到读锁请求之前！
-
-3. 这是因为 MySQL 认为写请求一般比读请求要重要。这也正是 MyISAM 表不太适合于有大量更新操作和查询操作应用的原因，因为，大量的更新操作会造成查询操作很难获得读锁，从而可能永远阻塞。
-
-这种情况有时可能会变得非常糟糕！幸好我们可以通过一些设置来调节 MyISAM 的调度行为。
-
-1. 通过指定启动参数 low-priority-updates，使 MyISAM 引擎默认给予读请求以优先的权利。
-
-2. 通过执行命令 SET LOW_PRIORITY_UPDATES=1，使该连接发出的更新请求优先级降低。
-
-3. 通过指定 INSERT、UPDATE、DELETE 语句的 LOW_PRIORITY 属性，降低该语句的优先级。
-
-虽然上面 3 种方法都是要么更新优先，要么查询优先的方法，但还是可以用其来解决查询相对重要的应用（如用户登录系统）中，读锁等待严重的问题。
-
-另外，MySQL 也提供了一种折中的办法来调节读写冲突，即给系统参数 max_write_lock_count 设置一个合适的值，当一个表的读锁达到这个值后，MySQL 就暂时将写请求的优先级降低，给读进程一定获得锁的机会。
-
-上面已经讨论了写优先调度机制带来的问题和解决办法。这 里还要强调一点：一些需要长时间运行的查询操作，也会使写进程“饿死”！因此，应用中应尽量避免出现长时间运行的查询操作，不要总想用一条 SELECT 语 句来解决问题，因为这种看似巧妙的 SQL 语句，往往比较复杂，执行时间较长，在可能的情况下可以通过使用中间表等措施对 SQL 语句做一定的“分解”，使每 一步查询都能在较短时间完成，从而减少锁冲突。如果复杂查询不可避免，应尽量安排在数据库空闲时段执行，比如一些定期统计可以安排在夜间执行。
-
-## InnoDB 锁
-
-InnoDB 与 MyISAM 的最大不同有两点：一是支持事务（TRANSACTION）；二是采用了行级锁。行级锁与表级锁本来就有许多不同之处，另外，事务的引入也带来了一些新问题。
-
-**事务（Transaction）及其 ACID 属性**
-事务是由一组 SQL 语句组成的逻辑处理单元，事务具有 4 属性，通常称为事务的 ACID 属性。
-
-1. 原子性（Actomicity）：事务是一个原子操作单元，其对数据的修改，要么全都执行，要么全都不执行。
-
-2. 一致性（Consistent）：在事务开始和完成时，数据都必须保持一致状态。这意味着所有相关的数据规则都必须应用于事务的修改，以操持完整性；事务结束时，所有的内部数据结构（如 B 树索引或双向链表）也都必须是正确的。
-
-3. 隔离性（Isolation）：数据库系统提供一定的隔离机制，保证事务在不受外部并发操作影响的“独立”环境执行。这意味着事务处理过程中的中间状态对外部是不可见的，反之亦然。
-
-4. 持久性（Durable）：事务完成之后，它对于数据的修改是永久性的，即使出现系统故障也能够保持。
-
-### 并发事务带来的问题
-
-相对于串行处理来说，并发事务处理能大大增加数据库资源的利用率，提高数据库系统的事务吞吐量，从而可以支持可以支持更多的用户。但并发事务处理也会带来一些问题，主要包括以下几种情况。
-[MySQL事务](https://github.com/bruceqiq/code_study/blob/main/MySQL/%E9%AB%98%E7%BA%A7%E7%89%B9%E6%80%A7/MySQL%E4%BA%8B%E5%8A%A1.md)
-
-1. 更新丢失（Lost Update）：当两个或多个事务选择同一行，然后基于最初选定的值更新该行时，由于每个事务都不知道其他事务的存在，就会发生丢失更新问题——最后的更新覆盖了其他事务所做的更新。例如，两个编辑人员制作了同一文档的电子副本。每个编辑人员独立地更改其副本，然后保存更改后的副本，这样就覆盖了原始文档。最后保存其更改保存其更改副本的编辑人员覆盖另一个编辑人员所做的修改。如果在一个编辑人员完成并提交事务之前，另一个编辑人员不能访问同一文件，则可避免此问题。
-
-2. 脏读（Dirty Reads）：一个事务正在对一条记录做修改，在这个事务并提交前，这条记录的数据就处于不一致状态；这时，另一个事务也来读取同一条记录，如果不加控制，第二个事务读取了这些“脏”的数据，并据此做进一步的处理，就会产生未提交的数据依赖关系。这种现象被形象地叫做“脏读”。
-
-3. 不可重复读（Non-Repeatable Reads）：一个事务在读取某些数据已经发生了改变、或某些记录已经被删除了！这种现象叫做“不可重复读”。
-
-4. 幻读（Phantom Reads）：一个事务按相同的查询条件重新读取以前检索过的数据，却发现其他事务插入了满足其查询条件的新数据，这种现象就称为“幻读”。
-
-### 事务隔离级别
-在并发事务处理带来的问题中，“更新丢失”通常应该是完全避免的。但防止更新丢失，并不能单靠数据库事务控制器来解决，需要应用程序对要更新的数据加必要的锁来解决，因此，防止更新丢失应该是应用的责任。
-
-“脏读”、“不可重复读”和“幻读”，其实都是数据库读一致性问题，必须由数据库提供一定的事务隔离机制来解决。数据库实现事务隔离的方式，基本可以分为以下两种。
-
-一种是在读取数据前，对其加锁，阻止其他事务对数据进行修改。
-
-另一种是不用加任何锁，通过一定机制生成一个数据请求时间点的一致性数据快照（Snapshot），并用这个快照来提供一定级别（语句级或事务级）的一致性读取。从用户的角度，好像是数据库可以提供同一数据的多个版本，因此，这种技术叫做数据多版本并发控制（Ｍ ultiVersion Concurrency Control，简称 MVCC 或 MCC），也经常称为多版本数据库。
-
-在 MVCC 并发控制中，读操作可以分成两类：**快照读** (snapshot read)与**当前读** (current read)。快照读，读取的是记录的可见版本 (有可能是历史版本)，不用加锁。当前读，读取的是记录的最新版本，并且，当前读返回的记录，都会加上锁，保证其他事务不会再并发修改这条记录。
-在一个支持 MVCC 并发控制的系统中，哪些读操作是快照读？哪些操作又是当前读呢？以 MySQL InnoDB 为例：
-
-快照读：简单的 select 操作，属于快照读，不加锁。(当然，也有例外)
-
-```mysql
-select * from table where ?;
-```
-
-当前读：特殊的读操作，插入/更新/删除操作，属于当前读，需要加锁。
-
-下面语句都属于当前读，读取记录的最新版本。并且，读取之后，还需要保证其他并发事务不能修改当前记录，对读取记录加锁。其中，除了第一条语句，对读取记录加 S 锁 (共享锁)外，其他的操作，都加的是 X 锁 (排它锁)。
-
-```mysql
-select * from table where ? lock in share mode;
-select * from table where ? for update;
-insert into table values (…);
-update table set ? where ?;
-delete from table where ?;
-```
-
-数据库的事务隔离越严格，并发副作用越小，但付出的代价也就越大，因为事务隔离实质上就是使事务在一定程度上 “串行化”进行，这显然与“并发”是矛盾的。同时，不同的应用对读一致性和事务隔离程度的要求也是不同的，比如许多应用对“不可重复读”和“幻读”并不敏 感，可能更关心数据并发访问的能力。
-
-为了解决“隔离”与“并发”的矛盾，ISO/ANSI SQL92 定义了 4 个事务隔离级别，每个级别的隔离程度不同，允许出现的副作用也不同，应用可以根据自己的业务逻辑要求，通过选择不同的隔离级别来平衡 “隔离”与“并发”的矛盾。下表很好地概括了这 4 个隔离级别的特性。
-![4](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281334486-4.png)
-
-## InonoD行锁争用
-
-```mysql
-mysql> show status like 'innodb_row_lock%';
-```
-
-![5](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281356304-5.png)
-如果发现锁争用比较严重，如 InnoDB_row_lock_waits 和 InnoDB_row_lock_time_avg 的值比较高，还可以通过设置 InnoDB Monitors 来进一步观察发生锁冲突的表、数据行等，并分析锁争用的原因。
-
-### InnoDB 的行锁模式及加锁方法
-![Snipaste_2021-04-25_02-34-28](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619289338923-Snipaste_2021-04-25_02-34-28.png)
-
-InnoDB 实现了以下两种类型的行锁。
-
-### 1. 共享锁（s）：又称读锁。
-允许一个事务去读一行，阻止其他事务获得相同数据集的排他锁。若事务 T 对数据对象 A 加上 S 锁，则事务 T 可以读 A 但不能修改 A，其他事务只能再对 A 加 S 锁，而不能加 X 锁，直到 T 释放 A 上的 S 锁。这保证了其他事务可以读 A，但在 T 释放 A 上的 S 锁之前不能对 A 做任何修改。
-
-### 2. 排他锁（Ｘ）：又称写锁。
-允许获取排他锁的事务更新数据，阻止其他事务取得相同的数据集共享读锁和排他写锁。若事务 T 对数据对象 A 加上 X 锁，事务 T 可以读 A 也可以修改 A，其他事务不能再对 A 加任何锁，直到 T 释放 A 上的锁。
-
-对于共享锁大家可能很好理解，就是多个事务只能读数据不能改数据。
-
-对于排他锁大家的理解可能就有些差别，我当初就犯了一个错误，以为排他锁锁住一行数据后，其他事务就不能读取和修改该行数据，其实不是这样的。**排他锁指的是一个事务在一行数据加上排他锁后，其他事务不能再在其上加其他的锁**。
-
-1. mysql InnoDB 引擎默认的修改数据语句：update,delete,insert 都会自动给涉及到的数据加上排他。
-
-2. select 语句默认不会加任何锁类型，如果加排他锁可以使用 select …for update 语句，加共享锁可以使用 select … lock in share mode 语句。
-
-3. 所以加过排他锁的数据行在其他事务种是不能修改数据的，也不能通过 for update 和 lock in share mode 锁的方式查询数据，但可以直接通过 select …from…查询数据，因为普通查询没有任何锁机制。
-
-4. 另外，为了允许行锁和表锁共存，实现多粒度锁机制，InnoDB 还有两种内部使用的意向锁（Intention Locks），这两种意向锁都是表锁。
-
-### 3. 意向锁
-意向锁实际是一种表级锁。防止在一个事务执行过程中，执行DDL操作导致的数据不一致(这里和DML锁有点类似)。
-
-意向锁分为两种锁类型：
-
-1. 意向共享锁（IS）：事务打算给数据行共享锁，事务在给一个数据行加共享锁前必须先取得该表的 IS 锁。
-
-2. 意向排他锁（IX）：事务打算给数据行加排他锁，事务在给一个数据行加排他锁前必须先取得该表的 IX 锁。
-
-### DML锁
-
-DML锁用于保证表中的原数据一致。当开启一个事务之后，其他的事务就不能对表做DDL语句操作。例如对表执行alter语句。
-
-InnoDB 行锁模式兼容性列表:
-![mysql6](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281378734-mysql6.png)
-
-如果一个事务请求的锁模式与当前的锁兼容，InnoDB 就请求的锁授予该事务；反之，如果两者两者不兼容，该事务就要等待锁释放。
-
-意向锁是 InnoDB 自动加的，不需用户干预。对于 UPDATE、DELETE 和 INSERT 语句，InnoDB 会自动给涉及数据集加排他锁（X)；对于普通 SELECT 语句，InnoDB 不会加任何锁。
-事务可以通过以下语句显式给记录集加共享锁或排他锁：
-
-共享锁（S）：
-```
-mysql SELECT * FROM table_name WHERE ... LOCK IN SHARE MODE;
-```
-排他锁（X）：
-```mysql
-SELECT * FROM table_name WHERE ... FOR UPDATE;
-```
-
-用`SELECT ... IN SHARE MODE`获得共享锁，主要用在需要数据依存关系时来确认某行记录是否存在，并确保没有人对这个记录进行 UPDATE 或者 DELETE 操作。但是如果当前事务也需要对该记录进行更新操作，则很有可能造成死锁，对于锁定行记录后需要进行更新操作的应用，应该使用 SELECT… FOR UPDATE 方式获得排他锁。
-
-### InnoDB 行锁实现方式
-
-当MySQL的事务隔离级别为RR级别时(可重复读)，并且`innodb_locks_unsafe_for_binlog=0`时，锁实现的方式有如下三种。
-
-#### 单行加锁
-
-InnoDB 行锁是通过给索引上的索引项加锁来实现的，这一点 MySQL 与 Oracle 不同，后者是通过在数据块中对相应数据行加锁来实现的。InnoDB 这种行锁实现特点意味着：**只有通过索引条件检索数据，InnoDB 才使用行级锁，否则，InnoDB 将使用表锁！**
-
-在实际应用中，要特别注意 InnoDB 行锁的这一特性，不然的话，可能导致大量的锁冲突，从而影响并发性能。下面通过一些实际例子来加以说明。
-
-1. 在不通过索引条件查询的时候，InnoDB 确实使用的是表锁，而不是行锁。
-
-```mysql
-mysql> create table tab_no_index(id int,name varchar(10)) engine=innodb;
-Query OK, 0 rows affected (0.15 sec)
-```
-
-```mysql
-mysql> insert into tab_no_index values(1,'1'),(2,'2'),(3,'3'),(4,'4');
-Query OK, 4 rows affected (0.00 sec)
-Records: 4 Duplicates: 0 Warnings: 0
-```
-
-![7](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281410141-7.png)
-
-在上面的例子中，看起来 session_1 只给一行加了排他锁，但 session_2 在请求其他行的排他锁时，却出现了锁等待！原因就是在没有索引的情况下，InnoDB 只能使用表锁。当我们给其增加一个索引后，InnoDB 就只锁定了符合条件的行，如下例所示：
-创建 tab_with_index 表，id 字段有普通索引：
-
-```mysql
-mysql> create table tab_with_index(id int,name varchar(10)) engine=innodb;
-mysql> alter table tab_with_index add index id(id);
-```
-
-![mysql8](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281420370-mysql8.png)
-2. 由于 MySQL 的行锁是针对索引加的锁，不是针对记录加的锁，所以虽然是访问不同行的记录，但是如果是使用相同的索引键，是会出现锁冲突的。应用设计的时候要注意这一点。
-在下面的例子中，表 tab_with_index 的 id 字段有索引，name 字段没有索引：
-
-```mysql
-mysql> alter table tab_with_index drop index name;
-Query OK, 4 rows affected (0.22 sec) Records: 4 Duplicates: 0
-Warnings: 0
-```
-
-```mysql
-mysql> insert into tab_with_index  values(1,'4');
-Query OK, 1 row affected (0.00 sec)
-mysql> select * from tab_with_index where id = 1;
-```
-
-![9](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281461692-9.png)
-
-InnoDB 存储引擎使用相同索引键的阻塞例子.
-![10](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281472874-10.png)
-3. 当表有多个索引的时候，不同的事务可以使用不同的索引锁定不同的行，另外，不论是使用主键索引、唯一索引或普通索引，InnoDB 都会使用行锁来对数据加锁。
-在下面的例子中，表 tab_with_index 的 id 字段有主键索引，name 字段有普通索引：
-
-```mysql
-mysql> alter table tab_with_index add index name(name);
-Query OK, 5 rows affected (0.23 sec) Records: 5 Duplicates: 0
-Warnings: 0
-```
-
-InnoDB 存储引擎的表使用不同索引的阻塞例子
-![11](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281505116-11.jpeg)
-4. 即便在条件中使用了索引字段，但是否使用索引来检索数据是由 MySQL 通过判断不同执行计划的代价来决 定的，如果 MySQL 认为全表扫描效率更高，比如对一些很小的表，它就不会使用索引，这种情况下 InnoDB 将使用表锁，而不是行锁。因此，在分析锁冲突 时，别忘了检查 SQL 的执行计划，以确认是否真正使用了索引。
-
-比如，在 tab_with_index 表里的 name 字段有索引，但是 name 字段是 varchar 类型的，检索值的数据类型与索引字段不同，虽然 MySQL 能够进行数据类型转换，但却不会使用索引，从而导致 InnoDB 使用表锁。通过用 explain 检查两条 SQL 的执行计划，我们可以清楚地看到了这一点。
-
-```mysql
-mysql> explain select * from tab_with_index where name = 1 \G
-mysql> explain select * from tab_with_index where name = '1' \G
-```
-
-#### 间隙锁
-
-当MySQL的事务隔离级别为可重复读时，为了避免幻读情况，采用了锁定记录范围的数据行。这种锁就是间隙锁(Gap lock)。
-举例来说，假如 emp 表中只有 101 条记录，其 empid 的值分别是 1,2,…,100,101，下面的 SQL：
-
-```mysql
-Select * from  emp where empid > 100 for update;
-```
-
-是一个范围条件的检索，InnoDB 不仅会对符合条件的 empid 值为 101 的记录加锁，也会对 empid 大于 101（这些记录并不存在）的“间隙”加锁。例如插入一条新数据，此时就会发生锁等待。
-
-InnoDB 使用间隙锁的目的，一方面是为了防止幻读，以满足相关隔离级别的要求，对于上面的例子，要是不使 用间隙锁，如果其他事务插入了 empid 大于 100 的任何记录，那么本事务如果再次执行上述语句，就会发生幻读；另外一方面，是为了满足其恢复和复制的需 要。有关其恢复和复制对锁机制的影响，以及不同隔离级别下 InnoDB 使用间隙锁的情况，在后续的章节中会做进一步介绍。
-
-很显然，在使用范围条件检索并锁定记录时，InnoDB 这种加锁机制会阻塞符合条件范围内键值的并发插入，这往往会造成严重的锁等待。因此，在实际应用开发中，尤其是并发插入比较多的应用，我们要尽量优化业务逻辑，尽量使用相等条件来访问更新数据，避免使用范围条件。
-
-还要特别说明的是，InnoDB 除了通过范围条件加锁时使用间隙锁外，如果使用相等条件请求给一个不存在的记录加锁，InnoDB 也会使用间隙锁！下面这个例子假设 emp 表中只有 101 条记录，其 empid 的值分别是 1,2,……,100,101。
-InnoDB 存储引擎的间隙锁阻塞例子
-![12](https://gitee.com/bruce_qiq/picture/raw/master/2021-4-25/1619281535061-12.png)
-> 间隙锁只适用于事务的可重复读隔离级别。
-
-#### Next-key Lock
-
-Next-key Lock位于单行记录锁和间隙锁之间。当一个InnoDB扫描索引是，不仅仅对选中的行进行加锁，也会对索引两边的间隙加间隙锁。
-
-例如数据中存在id为1,2,3....,80的数据，给数据添加一个排它锁，会发现无法插入ID为81的新数据。
-
-## 锁监控
-
-了解完MySQL的锁，对于如何发现SQL操作发生了锁情况，我们可以通过下面三种方式。
-1. show full processlist命令
-```mysql
-show full processlist;
-+----+------+------------------+--------------------+---------+------+----------+------------------------------------------------+
-| Id | User | Host             | db                 | Command | Time | State    | Info                                           |
-+----+------+------------------+--------------------+---------+------+----------+------------------------------------------------+
-| 3  | root | 172.18.0.1:55664 | demo               | Sleep   | 418  |          | <null>                                         |
-| 6  | root | 172.18.0.1:55774 | demo               | Query   | 3    | updating | update `user` set  name = '张三1' where id = 1 |
-| 9  | root | 172.18.0.1:55804 | information_schema | Query   | 0    | starting | show full processlist                          |
-+----+------+------------------+--------------------+---------+------+----------+------------------------------------------------+
-```
-2. show engine innodb status命令
-
-3. 通过MySQL中默认的数据中三张表
-```mysql
-use information_schema;
-select * from `INNODB_TRX`\G;
-select * from `INNODB_LOCKS`\G;
-select * from `INNODB_LOCK_WAITS`\G;
-```
-
-## 小结
-本文重点介绍了 MySQL 中 MyISAM 表级锁和 InnoDB 行级锁的实现特点，并讨论了两种存储引擎经常遇到的锁问题和解决办法。
-
-对于 MyISAM 的表锁，主要讨论了以下几点：
-1. 共享读锁（S）之间是兼容的，但共享读锁（S）与排他写锁（X）之间，以及排他写锁（X）之间是互斥的，也就是说读和写是串行的。
-
-2. 在一定条件下，MyISAM 允许查询和插入并发执行，我们可以利用这一点来解决应用中对同一表查询和插入的锁争用问题。
-
-3. MyISAM 默认的锁调度机制是写优先，这并不一定适合所有应用，用户可以通过设置 LOW_PRIORITY_UPDATES 参数，或在 INSERT、UPDATE、DELETE 语句中指定 LOW_PRIORITY 选项来调节读写锁的争用。
-
-4. 由于表锁的锁定粒度大，读写之间又是串行的，因此，如果更新操作较多，MyISAM 表可能会出现严重的锁等待，可以考虑采用 InnoDB 表来减少锁冲突。
-
-对于 InnoDB 表，本文主要讨论了以下几项内容：
-
-1. InnoDB 的行锁是基于索引实现的，如果不通过索引访问数据，InnoDB 会使用表锁。
-2. 介绍了 InnoDB 间隙锁（Next-key)机制，以及 InnoDB 使用间隙锁的原因。
-
-### 在不同的隔离级别下，InnoDB 的锁机制和一致性读策略不同。
-在了解 InnoDB 锁特性后，用户可以通过设计和 SQL 调整等措施减少锁冲突和死锁，包括：
-
-1. 尽量使用较低的隔离级别； 精心设计索引，并尽量使用索引访问数据，使加锁更精确，从而减少锁冲突的机会；
-
-2. 选择合理的事务大小，小事务发生锁冲突的几率也更小；
-
-3. 给记录集显式加锁时，最好一次性请求足够级别的锁。比如要修改数据的话，最好直接申请排他锁，而不是先申请共享锁，修改时再请求排他锁，这样容易产生死锁；
-
-4. 不同的程序访问一组表时，应尽量约定以相同的顺序访问各表，对一个表而言，尽可能以固定的顺序存取表中的行。这样可以大大减少死锁的机会；
-
-5. 尽量用相等条件访问数据，这样可以避免间隙锁对并发插入的影响； 不要申请超过实际需要的锁级别；除非必须，查询时不要显示加锁；
-
-6. 对于一些特定的事务，可以使用表锁来提高处理速度或减少死锁的可能。
