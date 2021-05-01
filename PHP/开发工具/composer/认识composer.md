@@ -1,12 +1,12 @@
 [TOC]
 
-## Composer 介绍
+## Composer介绍
 
 Composer 是 PHP 的一个<font color='red'>包依赖</font>管理工具。我们可以在项目中声明所依赖的外部工具库，Composer 会帮你安装这些依赖的库文件，有了它，我们就可以很轻松的使用一个命令将其他人的优秀代码引用到我们的项目中来。Composer 默认情况下不是全局安装，而是基于指定的项目的某个目录中(例如 vendor)进行安装。Composer 需要 PHP 5.3.2+ 以上版本，且需要开启 openssl。Composer 可运行在 Windows 、 Linux 以及 OSX 平台上。
 
-## Composer 安装
+## Composer安装
 
-1.Windows 安装
+### Windows 安装
 Wondows 平台上，我们只需要下载 Composer-Setup.exe 后，一步步安装即可。需要注意的是你需要开启 openssl 配置，我们打开 php 目录下的 php.ini，将 extension=php_openssl.dll 前面的分号去掉就可以了。
 ![windows安装](http://qiniucloud.qqdeveloper.com/How-to-Install-Composer-on-Windows-Specify-PHP-File-Location.png)
 安装完成之后，检测是否安装成功。可以使用
@@ -17,7 +17,7 @@ composer --version
 
 命令查看,如下图:
 ![检测是否安装成功](http://qiniucloud.qqdeveloper.com/Test-Whether-The-Composer-is-Successfully-Installed.png)
-2.Linux 安装
+### Linux 安装
 
 ```shell
 // 下载composer文件
@@ -28,7 +28,7 @@ php composer-setup.php
 mv composer.phar /usr/local/bin/composer
 ```
 
-3.Mac Os 安装
+### Mac Os 安装
 
 ```php
 ------直接安装
@@ -42,7 +42,7 @@ brew install composer
 composer --version
 ```
 
-4.如何切换 composer 镜像源
+### 如何切换 composer 镜像源
 现在阿里处理自己的 composer 镜像源，并且能够做到与 Packagist 官网实时同步，推荐使用阿里的 composer 镜像源.
 
 ```shell
@@ -56,7 +56,7 @@ composer config repo.packagist composer https://mirrors.aliyun.com/composer/
 composer config --unset repos.packagist
 ```
 
-5.composer 更新
+### composer 更新
 composer 的更新可以使用自身的命令来更新
 
 ```shell
@@ -67,7 +67,7 @@ composer selfupdate
 
 Composer 的使用，我们常见的几个操作如下：
 
-1.composer install
+### composer install
 当我们的 composer.json 文件中增加了项目的依赖关系,如下：
 
 ```shell
@@ -80,13 +80,13 @@ Composer 的使用，我们常见的几个操作如下：
 
 此时我们使用 composer install 时，会自动根据包中的依赖关系，来安装相对应的包。
 
-2.composer update
+### composer update
 该命令会根据 composer.json 配置文件中包依赖以及相应的版本，更新包的版本，但是该命令会将所有的包都更新到最新版本，在实际的项目中需要谨慎使用，尤其是在生产环境上面。
 
-3.composer require
+### composer require
 第 1 点中，我们讲到了如何去根据 composer.json 配置文件中的包依赖配置，安装对应的包。该命令可以不需要根据配置文件，而是去手动安装一个包。安装完之后，对应的依赖配置会自动添加在 composer.json 配置文件中。
 
-4.composer remove
+### composer remove
 该命令可以移除指定的包依赖，例如我们不需要依赖某个包直接使用该命令+包名
 
 ```shell
@@ -95,7 +95,7 @@ composer remove "topthink/framework": "5.0.5"
 
 同样的，执行该命令之后，composer.json 配置文件中的包依赖会自动删除,无需我们手动操作。
 
-5.composer show
+### composer show
 该命令主要是为了查看当前项目已经安装的包相关信息。
 
 ```shell
@@ -159,10 +159,12 @@ composer show topthink/framework
 
 1.composer 加载类型
 composer 加载类型包括 classmap,psr-0,psr-4,file.psr-0 逐渐的被抛弃了，由于一些老项目还在使用该规则，因此部分项目仍在使用。大多数的是使用 psr-4。classmap 是包文件的映射处理，下面有讲。file 主要加载一些 helper 的操作。
+
 1.composer dump-autoload -o
 该命令会根据包的命令空间和路径生成文件映射,当去加载包的时候，会根据映射去加载包文件。这样会加快我们的包文件访问速度。当我们执行了该命令，可以查看如下如的界面。被圈出来的就是类映射配置。
 ![](http://qiniucloud.qqdeveloper.com/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-09-08%2016.53.11.png)
 composer 具体怎么去处理这个加载顺序逻辑，我们可以通过查看 composer 加载类的处理顺序。下图中圈出的方法，首先就是去加载 classmap，没找到在去加载 psr-4。
 ![](http://qiniucloud.qqdeveloper.com/%E5%B1%8F%E5%B9%95%E5%BF%AB%E7%85%A7%202019-09-08%2016.58.41.png)
+
 2.composer dump-autoload -a
 该命令主要的是功能是，当在我们 1 中执行了命令，会生成映射文件。如果当去加载映射文件没有找到时，则提示包文件不存在。
