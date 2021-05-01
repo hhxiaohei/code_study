@@ -1,20 +1,22 @@
-### php-fpm是什么
+[TOC]
+
+## php-fpm是什么
 
 php-fpm是PHP的一个进程管理器。php下面的众多work进程皆有php-fpm进程管理器管理。[参考文章](http://mindoc.qqdeveloper.com/docs/php/php-1ch9talu8n9ms)
 
-### php-fpm的工作原理
+## php-fpm的工作原理
 
 php-fpm全名是PHP FastCGI进程管理器。php-fpm启动后会先读php.ini，然后再读相应的conf配置文件，conf配置可以覆盖php.ini的配置。
 启动php-fpm之后，会创建一个master进程，监听9000端口（可配置），master进程又会根据fpm.conf/www.conf ，去创建若干子进程，子进程用于处理实际的业务。
 当有客户端（比如nginx）来连接9000端口时，空闲子进程会自己去accept，如果子进程全部处于忙碌状态，新进的待accept的连接会被master放进队列里，等待fpm子进程空闲；这个存放待accept的半连接的队列有多长，由listen.backlog 配置。
 
-### 如何查看php-fpm进程与子进程
+## 如何查看php-fpm进程与子进程
 
-#### 查看php-fpm相关的所有进程。
+### 查看php-fpm相关的所有进程。
 ![](https://oscimg.oschina.net/oscnet/up-9dc7562a3651acae1ccc1e69255da301ec4.png)
 这里<kbd>pool www</kbd>皆是php-fpm的子进程，也就是我们常说的work进程。
 
-#### 查看php-fpm下面的子进程
+### 查看php-fpm下面的子进程
 
 通过上面的命令，其实我们能够看出php-fpm相关的进程了，如果我们需要更加直观的查看php-fpm的master进程和work进程，可以通过下面的方式进程查看。
 这里的5370则是php-fpm的master进程号。通过上面的命令已经很能直观的得出。
@@ -26,9 +28,9 @@ pm.max_children = 20 # 最大子进程数
 pm.start_servers = 15 # 初始化php-fpm进程时，默认的子进程数
 ```
 
-### php-fpm参数配置说明
+## php-fpm参数配置说明
 
-#### php-fpm全局配置参数
+### php-fpm全局配置参数
 
 ```shell
 #php-fpm的运行权限。
@@ -105,7 +107,7 @@ events.mechanism = epoll
 #前提是fpm被设置会系统服务。
 systemd_interval = 10s 
 ```
-#### php-fpm的进程进程池配置
+### php-fpm的进程进程池配置
 
 ```php
 #php-fpm的队列长度。
@@ -177,9 +179,9 @@ rlimit_files = 1024
 rlimit_core = 0 
 ```
 
-### 部分配置演示
+## 部分配置演示
 
-#### php-fpm的backlog大小设置
+### php-fpm的backlog大小设置
 
 php-fpm的backlog大小设置与php-fpm的处理能力有关，而不是越大越好。
 
@@ -188,7 +190,7 @@ php-fpm的backlog大小设置与php-fpm的处理能力有关，而不是越大�
 当该值设置过小，nginx之类的client请求，根本进入不了php-fpm的accept queue，报“502 Bad Gateway”错。所以，这还得去根据php-fpm的QPS来决定backlog的大小。计算方式最好为QPS=backlog。
 具体可以参考:https://www.jianshu.com/p/3ecc99ebf566
 
-#### php-fpm启动模式
+### php-fpm启动模式
 
 php-fpm以socket启动或者端口启动，这两种的方式根据实际情况进行配置。
 

@@ -1,7 +1,9 @@
-### Mac安装
+[TOC]
+
+## Mac安装
 
 使用Mac系统安装，可以使用brew包管理工具也可以使用源码编译安装。
-#### brew包管理工具安装
+### brew包管理工具安装
 ```shell
 # 搜索Redis
 kert@192 ~ % brew search redis
@@ -43,7 +45,7 @@ Or, if you don't want/need a background service you can just run:
  # 停止服务
  brew services stop redis
 ```
-#### 源码安装
+### 源码安装
 
 1. 直接到官网下载Redis源码，下载地址：https://redis.io/download
 
@@ -54,9 +56,9 @@ cd redis-6.0.8
 make && make install
 ```
 
-### Linux安装
+## Linux安装
 
-#### yum包管理工具安装
+### yum包管理工具安装
 
 ```shell
 [root@VM-51-113-centos ~]# yum install redis
@@ -80,7 +82,7 @@ Dependency Installed:
 jemalloc.x86_64 0:3.6.0-1.el7
 ```
 
-#### 源码安装
+### 源码安装
 
 由于Mac和Linux都是基于Unix，安装方式一致。依次执行下面的每一行命令即可。
 ```shell
@@ -90,7 +92,7 @@ cd redis-6.0.8
 make && make install
 ```
 
-### 安装优化
+## 安装优化
 
 在文章中提到的源码安装，我们都是采用的直接使用源码安装，这里有个小技巧，可以对日后的升级有所帮助。就是对源码文件创建一个软连接。以后升级直接对源码目录替换即可。下面的命令就是将下载的Redis源码创建一个软件列到 /opt/redis/6.0.8目录。
 ```shell

@@ -1,8 +1,10 @@
-### Composer 介绍
+[TOC]
+
+## Composer 介绍
 
 Composer 是 PHP 的一个<font color='red'>包依赖</font>管理工具。我们可以在项目中声明所依赖的外部工具库，Composer 会帮你安装这些依赖的库文件，有了它，我们就可以很轻松的使用一个命令将其他人的优秀代码引用到我们的项目中来。Composer 默认情况下不是全局安装，而是基于指定的项目的某个目录中(例如 vendor)进行安装。Composer 需要 PHP 5.3.2+ 以上版本，且需要开启 openssl。Composer 可运行在 Windows 、 Linux 以及 OSX 平台上。
 
-### Composer 安装
+## Composer 安装
 
 1.Windows 安装
 Wondows 平台上，我们只需要下载 Composer-Setup.exe 后，一步步安装即可。需要注意的是你需要开启 openssl 配置，我们打开 php 目录下的 php.ini，将 extension=php_openssl.dll 前面的分号去掉就可以了。
@@ -61,7 +63,7 @@ composer 的更新可以使用自身的命令来更新
 composer selfupdate
 ```
 
-### Composer 使用
+## Composer 使用
 
 Composer 的使用，我们常见的几个操作如下：
 
@@ -103,11 +105,11 @@ composer show
 composer show topthink/framework
 ```
 
-### Composer.json 与 Composer.lock 的区别是什么
+## Composer.json 与 Composer.lock 的区别是什么
 
 我们在使用 composer 的过程中会发现，当我们执行 composer update 等命令，会发现无意中多了一个 composer.lock 文件。那这个文件主要是干什么的呢？该文件主要是管理包版本使用的，当我们在使用 composer update 命令时，composer 会自动根据 composer.json 的包版本依赖，生成对应的 composer.lock 文件，当我们下次在执行 composer 命令的时候，首先也会去读取 composer.lock 文件的内容。
 
-### Composer 版本约束
+## Composer 版本约束
 
 在我们使用 composer 安装包时，不得不考虑的就是一个版本问题，因为不同的版本，存在兼容性问题，因此我们在使用该工具安装包时需要特别的注意包版本，如果使用不当很容易导致项目因为包版本问题瘫痪。常见的几种如下： 1.精准版本
 明确要安装到那个版本,如需要安装包的版本是 1.2.3
@@ -147,13 +149,13 @@ composer show topthink/framework
 
 如^1.2 就等于>=1.2 <2.0，^1.2.3 就等于>=1.2.3 < 2.0.0。
 
-### 语义化
+## 语义化
 
 什么是语义化呢？说的简单一点即是版本号管理。我们的包一般分文如下格式组成:
 `php 主版本号+次版本号+修复版本`
 如上面的例子中，我们都提到了一些包的版本号是 x.x.x。第一位就是主版本号，第二位就是次版本号，第三位就是针对一些 bug 修复来的修复版本号。具体的可以参考https://semver.org/lang/zh-CN/
 
-### Composer 使用优化
+## Composer 使用优化
 
 1.composer 加载类型
 composer 加载类型包括 classmap,psr-0,psr-4,file.psr-0 逐渐的被抛弃了，由于一些老项目还在使用该规则，因此部分项目仍在使用。大多数的是使用 psr-4。classmap 是包文件的映射处理，下面有讲。file 主要加载一些 helper 的操作。

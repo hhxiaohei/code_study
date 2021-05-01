@@ -1,4 +1,6 @@
-### php-fpm全局配置参数
+[TOC]
+
+## php-fpm全局配置参数
 
 ```shell
 #php-fpm的运行权限。
@@ -75,7 +77,7 @@ events.mechanism = epoll
 #前提是fpm被设置会系统服务。
 systemd_interval = 10s 
 ```
-### php-fpm的进程进程池配置
+## php-fpm的进程进程池配置
 
 ```php
 # php-fpm的队列长度。
