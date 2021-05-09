@@ -218,4 +218,4 @@ MyISAM存储引擎的数据表结构
 
 ## 存储引擎文件
 
-不同的存储引擎，实现起来也不同。InnoDB存储引擎分为redolog和undolog两种日志文件。
+不同的存储引擎，实现起来也不同。InnoDB存储引擎分为redolog和undolog两种日志文件。redolog是物理日志，ubdolog是逻辑日志。
